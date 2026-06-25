@@ -1,0 +1,23 @@
+data:
+  root_scan0: "D:/Project/WifiSenssing/Data/Data26_11/Data(0)26_11Csv"
+  root_scan1: "D:/Project/WifiSenssing/Data/Data26_11/Data(1)26_11Csv"
+  root_zref: "D:/Project/WifiSenssing/Data/Data26_11/ZData26_11Csv"
+  root_opposite: "D:/Project/WifiSenssing/Data/Data26_11/OppositePointDataCsv"
+
+  layout_main: "D:/Project/WifiSenssing/Data/Data26_11/layout_positions.csv"
+  layout_opposite: "D:/Project/WifiSenssing/Data/Data26_11/layout_positions_txop_rxop.csv"
+
+canonical:
+  keep_k: 53
+  sub_min: -26
+  sub_max: 26
+  drop_noncanonical_k: true
+  group_keys:
+    - view
+    - array
+    - point
+    - f0
+
+output:
+  canonical_npz: "outputs/canonical/canonical_k53_packets.npz"
+  audit_dir: "outputs/audits"
