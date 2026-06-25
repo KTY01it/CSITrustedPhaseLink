@@ -26,6 +26,9 @@ def main() -> None:
     parser.add_argument("--tx-x", type=float, required=True)
     parser.add_argument("--tx-y", type=float, required=True)
     parser.add_argument("--tx-z", type=float, required=True)
+    parser.add_argument("--tx-op-x", type=float, default=None, help="Optional Tx x for opposite view.")
+    parser.add_argument("--tx-op-y", type=float, default=None, help="Optional Tx y for opposite view.")
+    parser.add_argument("--tx-op-z", type=float, default=None, help="Optional Tx z for opposite view.")
 
     parser.add_argument("--x-min", type=float, required=True)
     parser.add_argument("--x-max", type=float, required=True)
@@ -68,6 +71,11 @@ def main() -> None:
         args.grid_step,
     )
     tx_xyz = np.array([args.tx_x, args.tx_y, args.tx_z], dtype=np.float64)
+    if args.tx_op_x is not None and args.tx_op_y is not None and args.tx_op_z is not None:
+        tx_op_xyz = np.array([args.tx_op_x, args.tx_op_y, args.tx_op_z], dtype=np.float64)
+    else:
+        tx_op_xyz = tx_xyz.copy()
+
     evidence = np.zeros(pts.shape[0], dtype=np.float64)
     per_group_energy = []
 
@@ -78,15 +86,17 @@ def main() -> None:
     print("output:", args.output)
     print("selected groups:", keep.size, "/", hbar.shape[0])
     print("grid shape:", (len(xs), len(ys), len(zs)), "voxels:", pts.shape[0])
-    print("tx_xyz:", tx_xyz)
+    print("tx_xyz main:", tx_xyz)
+    print("tx_xyz opposite:", tx_op_xyz)
     print("use_absolute_frequency:", bool(args.use_absolute_frequency))
 
     for c, gi in enumerate(keep, start=1):
+        tx_g = tx_op_xyz if str(view[gi]).lower() == "opposite" else tx_xyz
         resp = response_for_group(
             hbar=hbar[gi],
             sub_idx=sub_idx,
             f0_mhz=float(f0[gi]),
-            tx_xyz=tx_xyz,
+            tx_xyz=tx_g,
             rx_xyz=rx_xyz[gi],
             points_xyz=pts,
             subcarrier_weight=sub_w[gi],
@@ -117,6 +127,7 @@ def main() -> None:
         ys=ys.astype(np.float32),
         zs=zs.astype(np.float32),
         tx_xyz=tx_xyz.astype(np.float32),
+        tx_op_xyz=tx_op_xyz.astype(np.float32),
         selected_group_idx=keep.astype(np.int32),
         per_group_energy=np.asarray(per_group_energy, dtype=np.float64),
         source_group_file=str(args.input),
