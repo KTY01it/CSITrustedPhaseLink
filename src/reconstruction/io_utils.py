@@ -25,6 +25,7 @@ def normalize_point_id(value: object) -> str:
       "P01" vs "p1"
       "rx_01" vs "rx1"
       "scan01" vs "scan1"
+      "rx_op1" vs "rxop1"
     """
     if value is None:
         return ""
@@ -41,7 +42,7 @@ def normalize_point_id(value: object) -> str:
         if base.lstrip("+-").isdigit():
             s = base
 
-    # collapse separators only; keep alphabetic prefixes such as p/rx/scan
+    # collapse separators only; keep alphabetic prefixes such as p/rx/scan/rxop
     s = re.sub(r"[\s_\-]+", "", s)
 
     # normalize p01 -> p1, rx01 -> rx1, node01 -> node1, scan01 -> scan1
@@ -60,8 +61,8 @@ def layout_aliases(point_norm: str) -> list[str]:
     """Return aliases for layout node IDs.
 
     The Data26_11 CSI metadata stores points as numeric IDs such as "1", while
-    layout node IDs are often "scan1", "scan10", etc. This function maps the
-    layout key to additional aliases so both forms can match.
+    layout node IDs are often "scan1" or "rx_op1". This maps layout keys to
+    additional aliases so both forms can match.
     """
     p = normalize_point_id(point_norm)
     aliases = [p]
@@ -72,6 +73,8 @@ def layout_aliases(point_norm: str) -> list[str]:
         r"^opscan([0-9]+)$",
         r"^op([0-9]+)$",
         r"^rx([0-9]+)$",
+        r"^rxop([0-9]+)$",
+        r"^oprx([0-9]+)$",
         r"^p([0-9]+)$",
         r"^node([0-9]+)$",
     ]
@@ -80,10 +83,19 @@ def layout_aliases(point_norm: str) -> list[str]:
         if m:
             aliases.append(str(int(m.group(1))))
 
-    # If metadata contains numeric IDs, also allow scan-prefixed candidates.
+    # If metadata contains numeric IDs, also allow common prefixed candidates.
     if p.isdigit():
         n = str(int(p))
-        aliases.extend([f"scan{n}", f"rx{n}", f"p{n}", f"op{n}", f"scanop{n}"])
+        aliases.extend([
+            f"scan{n}",
+            f"rx{n}",
+            f"p{n}",
+            f"op{n}",
+            f"scanop{n}",
+            f"opscan{n}",
+            f"rxop{n}",
+            f"oprx{n}",
+        ])
 
     out = []
     seen = set()
