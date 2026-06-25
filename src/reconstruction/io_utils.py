@@ -24,6 +24,7 @@ def normalize_point_id(value: object) -> str:
       1 vs 1.0
       "P01" vs "p1"
       "rx_01" vs "rx1"
+      "scan01" vs "scan1"
     """
     if value is None:
         return ""
@@ -40,10 +41,10 @@ def normalize_point_id(value: object) -> str:
         if base.lstrip("+-").isdigit():
             s = base
 
-    # collapse separators only; keep alphabetic prefixes such as p/rx when present
+    # collapse separators only; keep alphabetic prefixes such as p/rx/scan
     s = re.sub(r"[\s_\-]+", "", s)
 
-    # normalize p01 -> p1, rx01 -> rx1, node01 -> node1
+    # normalize p01 -> p1, rx01 -> rx1, node01 -> node1, scan01 -> scan1
     m = re.match(r"^([a-z]+)0*([0-9]+)$", s)
     if m:
         return f"{m.group(1)}{int(m.group(2))}"
@@ -53,6 +54,44 @@ def normalize_point_id(value: object) -> str:
         return str(int(s))
 
     return s
+
+
+def layout_aliases(point_norm: str) -> list[str]:
+    """Return aliases for layout node IDs.
+
+    The Data26_11 CSI metadata stores points as numeric IDs such as "1", while
+    layout node IDs are often "scan1", "scan10", etc. This function maps the
+    layout key to additional aliases so both forms can match.
+    """
+    p = normalize_point_id(point_norm)
+    aliases = [p]
+
+    patterns = [
+        r"^scan([0-9]+)$",
+        r"^scanop([0-9]+)$",
+        r"^opscan([0-9]+)$",
+        r"^op([0-9]+)$",
+        r"^rx([0-9]+)$",
+        r"^p([0-9]+)$",
+        r"^node([0-9]+)$",
+    ]
+    for pat in patterns:
+        m = re.match(pat, p)
+        if m:
+            aliases.append(str(int(m.group(1))))
+
+    # If metadata contains numeric IDs, also allow scan-prefixed candidates.
+    if p.isdigit():
+        n = str(int(p))
+        aliases.extend([f"scan{n}", f"rx{n}", f"p{n}", f"op{n}", f"scanop{n}"])
+
+    out = []
+    seen = set()
+    for a in aliases:
+        if a and a not in seen:
+            out.append(a)
+            seen.add(a)
+    return out
 
 
 def load_phase_npz(path: str | Path) -> dict:
@@ -159,7 +198,7 @@ def make_layout_lookup(
     layout_opposite: Optional[str | Path] = None,
     unit_scale: float = 1.0,
 ) -> dict[tuple[str, str], np.ndarray]:
-    """Build lookup keyed by (view, normalized_point) -> rx_xyz."""
+    """Build lookup keyed by (view, normalized_point_alias) -> rx_xyz."""
     lookup: dict[tuple[str, str], np.ndarray] = {}
 
     for view_name, path in [("main", layout_main), ("opposite", layout_opposite)]:
@@ -171,7 +210,10 @@ def make_layout_lookup(
         for _, row in df.iterrows():
             point_norm = normalize_point_id(row[point_col])
             xyz = np.array([row[x_col], row[y_col], row[z_col]], dtype=np.float64) * float(unit_scale)
-            lookup[(view_name, point_norm)] = xyz
+            for alias in layout_aliases(point_norm):
+                # Preserve the first exact/alias occurrence to avoid silently
+                # overwriting a genuine duplicated layout node.
+                lookup.setdefault((view_name, alias), xyz)
 
     return lookup
 
