@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -74,7 +74,24 @@ def read_layout_csv(path: Optional[str | Path]) -> Optional[pd.DataFrame]:
 
 
 def infer_point_column(df: pd.DataFrame) -> str:
-    candidates = ["point", "point_id", "pid", "name", "rx", "rx_id", "location", "loc"]
+    """Infer the layout node identifier column.
+
+    The user's Data26_11 layouts use columns:
+      node_type,node_id,x_m,y_m,z_m,notes
+    so node_id is intentionally included near the front.
+    """
+    candidates = [
+        "point",
+        "point_id",
+        "node_id",
+        "node",
+        "pid",
+        "name",
+        "rx",
+        "rx_id",
+        "location",
+        "loc",
+    ]
     for c in candidates:
         if c in df.columns:
             return c
@@ -84,10 +101,10 @@ def infer_point_column(df: pd.DataFrame) -> str:
 def infer_xyz_columns(df: pd.DataFrame, prefix: str = "") -> tuple[str, str, str]:
     candidates = [
         (f"{prefix}x", f"{prefix}y", f"{prefix}z"),
+        ("x_m", "y_m", "z_m"),
         ("x", "y", "z"),
         ("rx_x", "rx_y", "rx_z"),
         ("pos_x", "pos_y", "pos_z"),
-        ("x_m", "y_m", "z_m"),
         ("x_cm", "y_cm", "z_cm"),
     ]
     for cols in candidates:
