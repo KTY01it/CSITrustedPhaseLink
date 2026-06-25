@@ -47,6 +47,23 @@ def _subcarrier_reliability(csi_g: np.ndarray) -> np.ndarray:
     return score.astype(np.float32)
 
 
+def _print_no_group_diagnostics(meta: pd.DataFrame, layout_lookup: dict, skipped: list) -> None:
+    print("\n[NO GROUP DIAGNOSTICS]")
+    print("metadata groups:", meta.groupby(["view", "array", "point", "point_norm", "f0"]).ngroups)
+    print("layout keys:", len(layout_lookup))
+    print("sample meta points:")
+    print(meta[["view", "array", "point", "point_norm", "f0"]].drop_duplicates().head(20).to_string(index=False))
+    print("sample layout keys:")
+    for k in list(layout_lookup.keys())[:20]:
+        print(" ", k, "->", layout_lookup[k])
+    if skipped:
+        skipped_df = pd.DataFrame(skipped, columns=["view", "array", "point", "point_norm", "f0", "n_packets", "reason"])
+        print("skip reasons:")
+        print(skipped_df["reason"].value_counts())
+        print("sample skipped:")
+        print(skipped_df.head(20).to_string(index=False))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build group-level fused CSI for TPL-BP-Occ Baseline 1.")
     parser.add_argument("--input", default="outputs/phaselink/tpl_tof_net_v3.npz")
@@ -80,20 +97,20 @@ def main() -> None:
     rows = []
     skipped = []
 
-    grouped = meta.groupby(["view", "array", "point", "f0"], sort=False)
+    grouped = meta.groupby(["view", "array", "point", "point_norm", "f0"], sort=False)
     for gkey, gdf in grouped:
-        view, array, point, f0 = gkey
+        view, array, point, point_norm, f0 = gkey
         idx = gdf.index.to_numpy()
         if len(idx) < args.min_frames:
-            skipped.append((view, array, point, f0, len(idx), "too_few_frames"))
+            skipped.append((view, array, point, point_norm, f0, len(idx), "too_few_frames"))
             continue
 
-        geom_key = (str(view), str(point))
+        geom_key = (str(view), str(point_norm))
         if geom_key not in layout_lookup:
-            msg = f"missing geometry for {geom_key}"
+            msg = f"missing geometry for {geom_key} from raw point={point}"
             if args.missing_geometry == "error":
                 raise KeyError(msg)
-            skipped.append((view, array, point, f0, len(idx), "missing_geometry"))
+            skipped.append((view, array, point, point_norm, f0, len(idx), "missing_geometry"))
             continue
 
         csi_g = csi[idx]
@@ -109,6 +126,7 @@ def main() -> None:
             "view": view,
             "array": array,
             "point": point,
+            "point_norm": point_norm,
             "f0": float(f0),
             "n_packets": int(len(idx)),
             "group_confidence": group_conf,
@@ -118,13 +136,14 @@ def main() -> None:
         })
 
     if len(hbars) == 0:
+        _print_no_group_diagnostics(meta, layout_lookup, skipped)
         raise RuntimeError("No fused groups produced. Check layout paths and point naming.")
 
     hbar_arr = np.stack(hbars, axis=0).astype(np.complex64)
     w_arr = np.stack(weights, axis=0).astype(np.float32)
     rx_arr = np.stack(rx_xyz, axis=0).astype(np.float64)
     group_meta = pd.DataFrame(rows)
-    skipped_df = pd.DataFrame(skipped, columns=["view", "array", "point", "f0", "n_packets", "reason"])
+    skipped_df = pd.DataFrame(skipped, columns=["view", "array", "point", "point_norm", "f0", "n_packets", "reason"])
 
     out = Path(args.output)
     safe_mkdir(out.parent)
@@ -137,6 +156,7 @@ def main() -> None:
         view=group_meta["view"].to_numpy(dtype=object),
         array=group_meta["array"].to_numpy(dtype=object),
         point=group_meta["point"].to_numpy(dtype=object),
+        point_norm=group_meta["point_norm"].to_numpy(dtype=object),
         f0=group_meta["f0"].to_numpy(np.float32),
         n_packets=group_meta["n_packets"].to_numpy(np.int32),
         group_confidence=group_meta["group_confidence"].to_numpy(np.float32),
