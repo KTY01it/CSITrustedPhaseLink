@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Optional
+import re
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,44 @@ REQUIRED_PHASE_NPZ_KEYS = [
     "point",
     "f0",
 ]
+
+
+def normalize_point_id(value: object) -> str:
+    """Normalize point/node identifiers across npz metadata and layout CSVs.
+
+    Handles common mismatches:
+      1 vs 1.0
+      "P01" vs "p1"
+      "rx_01" vs "rx1"
+    """
+    if value is None:
+        return ""
+    if isinstance(value, (np.integer, int)):
+        return str(int(value))
+    if isinstance(value, (np.floating, float)) and np.isfinite(value):
+        if abs(float(value) - round(float(value))) < 1e-9:
+            return str(int(round(float(value))))
+        return str(float(value)).strip().lower()
+
+    s = str(value).strip().lower()
+    if s.endswith(".0"):
+        base = s[:-2]
+        if base.lstrip("+-").isdigit():
+            s = base
+
+    # collapse separators only; keep alphabetic prefixes such as p/rx when present
+    s = re.sub(r"[\s_\-]+", "", s)
+
+    # normalize p01 -> p1, rx01 -> rx1, node01 -> node1
+    m = re.match(r"^([a-z]+)0*([0-9]+)$", s)
+    if m:
+        return f"{m.group(1)}{int(m.group(2))}"
+
+    # normalize 001 -> 1
+    if s.isdigit():
+        return str(int(s))
+
+    return s
 
 
 def load_phase_npz(path: str | Path) -> dict:
@@ -38,10 +77,12 @@ def load_phase_npz(path: str | Path) -> dict:
 
 def build_meta_from_phase_npz(z: dict) -> pd.DataFrame:
     n = len(z["view"])
+    raw_point = z["point"].astype(str)
     meta = pd.DataFrame({
         "view": z["view"].astype(str),
         "array": z["array"].astype(str),
-        "point": z["point"].astype(str),
+        "point": raw_point,
+        "point_norm": [normalize_point_id(p) for p in raw_point],
         "f0": z["f0"].astype(float),
     })
     if "frame" in z:
@@ -76,7 +117,7 @@ def read_layout_csv(path: Optional[str | Path]) -> Optional[pd.DataFrame]:
 def infer_point_column(df: pd.DataFrame) -> str:
     """Infer the layout node identifier column.
 
-    The user's Data26_11 layouts use columns:
+    The Data26_11 layouts use columns:
       node_type,node_id,x_m,y_m,z_m,notes
     so node_id is intentionally included near the front.
     """
@@ -118,12 +159,7 @@ def make_layout_lookup(
     layout_opposite: Optional[str | Path] = None,
     unit_scale: float = 1.0,
 ) -> dict[tuple[str, str], np.ndarray]:
-    """Build lookup keyed by (view, point) -> rx_xyz.
-
-    The loader normalizes column names and infers point/x/y/z columns. Use
-    unit_scale when layout coordinates are stored in centimeters or millimeters.
-    Example: centimeters to meters uses --layout-unit-scale 0.01.
-    """
+    """Build lookup keyed by (view, normalized_point) -> rx_xyz."""
     lookup: dict[tuple[str, str], np.ndarray] = {}
 
     for view_name, path in [("main", layout_main), ("opposite", layout_opposite)]:
@@ -133,9 +169,9 @@ def make_layout_lookup(
         point_col = infer_point_column(df)
         x_col, y_col, z_col = infer_xyz_columns(df)
         for _, row in df.iterrows():
-            point = str(row[point_col])
+            point_norm = normalize_point_id(row[point_col])
             xyz = np.array([row[x_col], row[y_col], row[z_col]], dtype=np.float64) * float(unit_scale)
-            lookup[(view_name, point)] = xyz
+            lookup[(view_name, point_norm)] = xyz
 
     return lookup
 
